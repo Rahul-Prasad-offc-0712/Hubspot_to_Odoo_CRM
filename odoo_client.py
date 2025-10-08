@@ -33,7 +33,6 @@ class OdooClient:
 
     # ------------------- UTILITIES -------------------
     def _get_stage_id(self, stage_name="New"):
-        """Get the stage_id for a given stage name (default: 'New')"""
         try:
             stage_ids = self.models.execute_kw(
                 self.DB, self.uid, self.PASSWORD,
@@ -48,11 +47,6 @@ class OdooClient:
 
     # ------------------- CRM METHODS -------------------
     def create_lead(self, lead_data, stage_name="New"):
-        """
-        Create a CRM Opportunity (shows in pipeline).
-        - Ensures record type is 'opportunity'
-        - Assigns a default stage and sales team
-        """
         try:
             lead_data['type'] = 'opportunity'
 
@@ -76,7 +70,6 @@ class OdooClient:
             return None
 
     def search_lead_by_email(self, email):
-        """Return lead IDs matching email"""
         try:
             lead_ids = self.models.execute_kw(
                 self.DB, self.uid, self.PASSWORD,
@@ -89,7 +82,6 @@ class OdooClient:
             return []
 
     def get_crm_lead_fields(self):
-        """Return list of valid fields in crm.lead"""
         try:
             fields_dict = self.models.execute_kw(
                 self.DB, self.uid, self.PASSWORD,
