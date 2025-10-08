@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RFQ Form</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        .btn { padding: 8px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; }
+        .btn-add { background-color: #28a745; color: white; }
+        .btn-submit { background-color: #007bff; color: white; }
+        input[type="text"] { width: 95%; padding: 5px; }
+    </style>
+    <script>
+        function addFieldRow() {
+            const table = document.getElementById("rfq-table");
+            const rowCount = table.rows.length;
+            const row = table.insertRow(rowCount);
+            row.innerHTML = `
+                <td><input type="text" name="field_name[]" placeholder="Field Name"></td>
+                <td><input type="text" name="field_value[]" placeholder="Field Value"></td>
+            `;
+        }
+    </script>
+</head>
+<body>
+    <h2>RFQ Form</h2>
+    <form method="POST" action="/submit-rfq">
+        <input type="hidden" name="lead_id" value="{{ lead_id }}">
+        <table id="rfq-table">
+            <tr>
+                <th>Field Name</th>
+                <th>Field Value</th>
+            </tr>
+            <tr>
+                <td><input type="text" name="field_name[]" value="Project Name" readonly></td>
+                <td><input type="text" name="field_value[]" value="{{ project_name }}"></td>
+            </tr>
+            <tr>
+                <td><input type="text" name="field_name[]" value="Description" readonly></td>
+                <td><input type="text" name="field_value[]" value="{{ description }}"></td>
+            </tr>
+            <tr>
+                <td><input type="text" name="field_name[]" value="Category" readonly></td>
+                <td><input type="text" name="field_value[]" value="{{ category }}"></td>
+            </tr>
+        </table>
+        <button type="button" class="btn btn-add" onclick="addFieldRow()">Add More Fields</button>
+        <button type="submit" class="btn btn-submit">Submit & Generate PDF</button>
+    </form>
+</body>
+</html>
