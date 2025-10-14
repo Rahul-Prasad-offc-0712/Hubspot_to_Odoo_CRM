@@ -4,22 +4,27 @@
     <title>RFQ Form</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 30px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        h2 { margin-bottom: 10px; }
+        .section { margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; border-radius:5px; }
+        .section h3 { margin-top:0; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
         th { background-color: #f4f4f4; }
-        .btn { padding: 8px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; }
-        .btn-add { background-color: #28a745; color: white; }
-        .btn-submit { background-color: #007bff; color: white; }
-        input[type="text"] { width: 95%; padding: 5px; }
+        input[type="text"], input[type="number"], input[type="email"] { width: 95%; padding:5px; }
+        .btn { padding:8px 15px; margin:5px; cursor:pointer; border:none; border-radius:5px; }
+        .btn-add { background-color: #28a745; color:white; }
+        .btn-submit { background-color: #007bff; color:white; }
     </style>
     <script>
-        function addFieldRow() {
-            const table = document.getElementById("rfq-table");
+        function addProductRow() {
+            const table = document.getElementById("product-table");
             const rowCount = table.rows.length;
             const row = table.insertRow(rowCount);
             row.innerHTML = `
                 <td><input type="text" name="field_name[]" placeholder="Field Name"></td>
                 <td><input type="text" name="field_value[]" placeholder="Field Value"></td>
+                <td><input type="number" name="quantity[]" value="1" min="1"></td>
+                <td><input type="number" name="unit_price[]" value="0" step="0.01"></td>
             `;
         }
     </script>
@@ -28,25 +33,59 @@
     <h2>RFQ Form</h2>
     <form method="POST" action="/submit-rfq">
         <input type="hidden" name="lead_id" value="{{ lead_id }}">
-        <table id="rfq-table">
-            <tr>
-                <th>Field Name</th>
-                <th>Field Value</th>
-            </tr>
-            <tr>
-                <td><input type="text" name="field_name[]" value="Project Name" readonly></td>
-                <td><input type="text" name="field_value[]" value="{{ project_name }}"></td>
-            </tr>
-            <tr>
-                <td><input type="text" name="field_name[]" value="Description" readonly></td>
-                <td><input type="text" name="field_value[]" value="{{ description }}"></td>
-            </tr>
-            <tr>
-                <td><input type="text" name="field_name[]" value="Category" readonly></td>
-                <td><input type="text" name="field_value[]" value="{{ category }}"></td>
-            </tr>
-        </table>
-        <button type="button" class="btn btn-add" onclick="addFieldRow()">Add More Fields</button>
+
+        <!-- Client Details Section -->
+        <div class="section">
+            <h3>Client Details</h3>
+            <label>Name:</label>
+            <input type="text" name="client_name" required><br><br>
+            <label>Address:</label>
+            <input type="text" name="client_address" required><br><br>
+            <label>Email:</label>
+            <input type="email" name="client_email"><br><br>
+            <label>Phone:</label>
+            <input type="text" name="client_phone"><br>
+        </div>
+
+        <!-- Expiration Date Section -->
+        <div class="section">
+            <h3>Quotation Expiration</h3>
+            <label>Expiration Date:</label>
+            <input type="text" name="expiration_date" placeholder="MM/DD/YYYY">
+        </div>
+
+        <!-- Project / Product Details Section -->
+        <div class="section">
+            <h3>Project / Product Details</h3>
+            <table id="product-table">
+                <tr>
+                    <th>Field Name</th>
+                    <th>Field Value</th>
+                    <th>Quantity</th>
+                    <th>Unit Price</th>
+                </tr>
+                <tr>
+                    <td><input type="text" name="field_name[]" value="Project Name" readonly></td>
+                    <td><input type="text" name="field_value[]" value="{{ project_name }}"></td>
+                    <td><input type="number" name="quantity[]" value="1" min="1"></td>
+                    <td><input type="number" name="unit_price[]" value="0" step="0.01"></td>
+                </tr>
+                <tr>
+                    <td><input type="text" name="field_name[]" value="Description" readonly></td>
+                    <td><input type="text" name="field_value[]" value="{{ description }}"></td>
+                    <td><input type="number" name="quantity[]" value="1" min="1"></td>
+                    <td><input type="number" name="unit_price[]" value="0" step="0.01"></td>
+                </tr>
+                <tr>
+                    <td><input type="text" name="field_name[]" value="Category" readonly></td>
+                    <td><input type="text" name="field_value[]" value="{{ category }}"></td>
+                    <td><input type="number" name="quantity[]" value="1" min="1"></td>
+                    <td><input type="number" name="unit_price[]" value="0" step="0.01"></td>
+                </tr>
+            </table>
+            <button type="button" class="btn btn-add" onclick="addProductRow()">Add More Products</button>
+        </div>
+
         <button type="submit" class="btn btn-submit">Submit & Generate PDF</button>
     </form>
 </body>
