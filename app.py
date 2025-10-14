@@ -1,16 +1,21 @@
 from flask import Flask, render_template, request, send_file, jsonify, url_for
-import pdfkit, io, base64, requests, json, datetime
+import pdfkit, io, base64, requests, json, datetime, os, uuid
 from odoo_client import OdooClient
-import uuid
 
 # ---------------- Flask App ----------------
 app = Flask(__name__)
 odoo = OdooClient()
 
 # ---------------- PDFKit Config ----------------
-PDFKIT_CONFIG = pdfkit.configuration(
-    wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"  # Update path if needed
-)
+# Dynamically detect environment (Windows local vs Linux Render)
+if os.getenv("RENDER"):
+    # Render runs on Linux
+    PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
+else:
+    # Local development (Windows)
+    PDFKIT_CONFIG = pdfkit.configuration(
+        wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+    )
 
 # ---------------- Odoo Config ----------------
 ODOO_URL = "https://intranet-stratvals-stg-100620205-24352374.dev.odoo.com"
@@ -26,6 +31,7 @@ def parse_values(values_list):
     for item in values_list:
         result[item["name"]] = item["value"]
     return result
+
 
 def create_odoo_lead(values, lead_type="IQL"):
     name = f"{values.get('firstname', '')} {values.get('lastname', '')}".strip() or "Unknown"
@@ -47,6 +53,7 @@ def create_odoo_lead(values, lead_type="IQL"):
     print(f"✅ Lead created: {name} ({email}), Type={lead_type}, ID={lead_id}")
     return lead_id
 
+
 # ---------------- ROUTES ----------------
 
 @app.route("/hubspot_webhook", methods=["POST"])
@@ -65,6 +72,7 @@ def hubspot_webhook():
     parsed = parse_values(values_list)
     create_odoo_lead(parsed, lead_type="IQL")
     return jsonify({"status": "success"})
+
 
 @app.route("/project/details", methods=["GET"])
 def project_details():
@@ -95,6 +103,7 @@ def project_details():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/lead/won", methods=["GET"])
 def lead_won():
     """Check if a lead is marked Won"""
@@ -114,7 +123,6 @@ def lead_won():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ---------------- ROUTES ----------------
 
 @app.route("/rfq/<int:lead_id>", methods=["GET"])
 def rfq_form(lead_id):
@@ -140,11 +148,10 @@ def submit_rfq():
     lead = odoo.models.execute_kw(
         odoo.DB, odoo.uid, odoo.PASSWORD,
         'crm.lead', 'read', [[lead_id]],
-        {'fields': ['name', 'partner_name', 'email_from', 'phone', 
+        {'fields': ['name', 'partner_name', 'email_from', 'phone',
                     'x_studio_project_name_1', 'x_studio_project_description_1', 'x_studio_project_category_1']}
     )[0]
 
-    # Client & expiration
     client_name = request.form.get("client_name") or lead.get('partner_name', 'Client')
     client_address = request.form.get("client_address") or ""
     client_email = request.form.get("client_email") or lead.get('email_from', 'client@example.com')
@@ -179,7 +186,6 @@ def submit_rfq():
     with open("static/logo.jpg", "rb") as img_file:
         logo_base64 = base64.b64encode(img_file.read()).decode('utf-8')
 
-    # PDF HTML template
     pdf_html = f"""
     <html>
     <head>
@@ -224,7 +230,6 @@ def submit_rfq():
     </html>
     """
 
-    # Generate PDF
     try:
         pdf_bytes = pdfkit.from_string(pdf_html, False, configuration=PDFKIT_CONFIG)
     except Exception as e:
