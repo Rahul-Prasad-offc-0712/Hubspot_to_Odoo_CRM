@@ -134,9 +134,11 @@ def lead_won():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# 🔹 RFQ Form (HTML)
+# ---------------- ROUTES ----------------
+
 @app.route("/rfq/<int:lead_id>", methods=["GET"])
 def rfq_form(lead_id):
+    """Render RFQ Form"""
     project_name = request.args.get("project_name", "")
     description = request.args.get("project_description", "")
     category = request.args.get("project_category", "")
@@ -147,45 +149,111 @@ def rfq_form(lead_id):
                            category=category)
 
 
-# 🔹 RFQ Submission (PDF + Upload)
 @app.route("/submit-rfq", methods=["POST"])
 def submit_rfq():
-    lead_id = request.form.get("lead_id")
-    if not lead_id or not lead_id.isdigit():
-        return "Invalid or missing lead_id", 400
-    lead_id = int(lead_id)
+    """Generate PDF from RFQ form"""
+    lead_id = int(request.form.get("lead_id", 0))
+    if not lead_id:
+        return "Invalid lead_id", 400
 
-    project_name = request.form.get("project_name", "Project")
-    safe_project_name = re.sub(r'[^A-Za-z0-9_-]', '_', project_name.strip())
+    # Fetch lead data
+    lead = odoo.models.execute_kw(
+        odoo.DB, odoo.uid, odoo.PASSWORD,
+        'crm.lead', 'read', [[lead_id]],
+        {'fields': ['name', 'partner_name', 'email_from', 'phone', 
+                    'x_studio_project_name_1', 'x_studio_project_description_1', 'x_studio_project_category_1']}
+    )[0]
 
+    # Client & expiration
+    client_name = request.form.get("client_name") or lead.get('partner_name', 'Client')
+    client_address = request.form.get("client_address") or ""
+    client_email = request.form.get("client_email") or lead.get('email_from', 'client@example.com')
+    client_phone = request.form.get("client_phone") or lead.get('phone', '')
+    expiration_date = request.form.get("expiration_date") or (datetime.date.today() + datetime.timedelta(days=15)).strftime("%m/%d/%Y")
+
+    # Project fields
     field_names = request.form.getlist("field_name[]")
     field_values = request.form.getlist("field_value[]")
+    quantities = request.form.getlist("quantity[]")
+    unit_prices = request.form.getlist("unit_price[]")
 
+    subtotal = 0
+    rows = ""
+    for name, value, qty, price in zip(field_names, field_values, quantities, unit_prices):
+        try:
+            qty_val = int(qty)
+            price_val = float(price)
+        except:
+            qty_val = 1
+            price_val = 0
+        line_total = qty_val * price_val
+        subtotal += line_total
+        desc = f"{name}: {value}"
+        rows += f"<tr><td>{qty_val}</td><td>{desc}</td><td>${price_val:.2f}</td><td>${line_total:.2f}</td></tr>"
+
+    total = subtotal
+    quotation_number = f"QT-{str(uuid.uuid4())[:8].upper()}"
+    date_today = datetime.date.today().strftime("%m/%d/%Y")
+
+    # Convert logo to base64
+    with open("static/logo.jpg", "rb") as img_file:
+        logo_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+
+    # PDF HTML template
     pdf_html = f"""
-    <html><head><style>
-        body {{ font-family: Arial; font-size: 12px; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ border: 1px solid #ccc; padding: 6px; }}
-        th {{ background-color: #f5f5f5; }}
-    </style></head>
+    <html>
+    <head>
+    <style>
+        body {{ font-family: 'Times New Roman', serif; font-size: 14px; line-height: 1.5; margin: 40px; }}
+        table {{ width:100%; border-collapse: collapse; margin-top: 10px; }}
+        th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
+        th {{ background: #f4f4f4; }}
+        .header-table td {{ border:none; vertical-align: top; }}
+    </style>
+    </head>
     <body>
-    <h2>RFQ Document for {project_name}</h2>
-    <table><tr><th>Field</th><th>Value</th></tr>
-    """
-    for name, value in zip(field_names, field_values):
-        pdf_html += f"<tr><td>{name}</td><td>{value}</td></tr>"
-    pdf_html += "</table></body></html>"
+    <table class="header-table">
+        <tr>
+            <td><img src="data:image/jpeg;base64,{logo_base64}" style="width:150px;height:auto;"></td>
+            <td style="text-align:right;">
+                <h2>Strategic Value Solutions</h2>
+                <p>QUOTE<br>QUOTATION #: {quotation_number}<br>Date: {date_today}<br>Expiration: {expiration_date}</p>
+            </td>
+        </tr>
+    </table>
 
+    <h4>To:</h4>
+    <p><b>{client_name}</b><br>{client_address}<br>{client_email}<br>{client_phone}</p>
+
+    <table>
+        <tr><th>Qty</th><th>Description</th><th>Unit Price</th><th>Line Total</th></tr>
+        {rows}
+    </table>
+
+    <table style="margin-top:20px;">
+        <tr><td style="text-align:right;"><b>Subtotal:</b></td><td style="text-align:right;">${subtotal:.2f}</td></tr>
+        <tr><td style="text-align:right;"><b>Sales Tax:</b></td><td style="text-align:right;">$0.00</td></tr>
+        <tr><td style="text-align:right;"><b>Total:</b></td><td style="text-align:right;"><b>${total:.2f}</b></td></tr>
+    </table>
+
+    <p style="margin-top:20px;">Quotation prepared by: <b>Uttam Soni</b></p>
+    <p>This is a quotation on the goods named, subject to the conditions noted below: All sales final, payment due upon receipt.</p>
+    <p>To accept this quotation, sign here and return: ________________________________________________</p>
+    <p>Thank you for your business!</p>
+    </body>
+    </html>
+    """
+
+    # Generate PDF
     try:
         pdf_bytes = pdfkit.from_string(pdf_html, False, configuration=PDFKIT_CONFIG)
     except Exception as e:
         return f"PDF generation failed: {e}", 500
 
-    pdf_filename = f"RFQ_{safe_project_name}_{lead_id}.pdf"
+    pdf_filename = f"Quotation_{lead_id}.pdf"
     return send_file(io.BytesIO(pdf_bytes), download_name=pdf_filename, as_attachment=True)
 
 
-# ---------------- Main ----------------
+# ---------------- MAIN ----------------
 if __name__ == "__main__":
-    print("🚀 Flask server running on http://0.0.0.0:5000")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
