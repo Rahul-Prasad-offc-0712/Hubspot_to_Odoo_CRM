@@ -18,7 +18,6 @@ def parse_values(values_list):
         result[item["name"]] = item["value"]
     return result
 
-
 def create_odoo_lead(values, lead_type="IQL"):
     name = f"{values.get('firstname','')} {values.get('lastname','')}".strip() or "Unknown"
     email = values.get("email", "No Email")
@@ -41,7 +40,6 @@ def create_odoo_lead(values, lead_type="IQL"):
     print(f"✅ Lead created: {name} ({email}), Type={lead_type}, ID={lead_id}")
     return lead_id
 
-
 @app.route("/hubspot_webhook", methods=["POST"])
 def hubspot_webhook():
     data = request.json
@@ -57,7 +55,6 @@ def hubspot_webhook():
     parsed = parse_values(values_list)
     create_odoo_lead(parsed, lead_type="IQL")
     return jsonify({"status": "success"})
-
 
 # ------------------- Project Details -------------------
 @app.route("/project/details", methods=["GET"])
@@ -88,7 +85,6 @@ def project_details():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ------------------- Lead Won Check -------------------
 @app.route("/lead/won", methods=["GET"])
 def lead_won():
@@ -108,7 +104,6 @@ def lead_won():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ------------------- RFQ Form -------------------
 @app.route("/rfq/<int:lead_id>", methods=["GET"])
 def rfq_form(lead_id):
@@ -122,7 +117,6 @@ def rfq_form(lead_id):
         description=description,
         category=category
     )
-
 
 # ------------------- Submit RFQ & Generate PDF -------------------
 @app.route("/submit-rfq", methods=["POST"])
@@ -138,18 +132,44 @@ def submit_rfq():
         quotation_number = f"QT-{str(uuid.uuid4())[:8].upper()}"
         date_today = datetime.date.today().strftime("%m/%d/%Y")
 
-        # ---------------- Prepare HTML PDF ----------------
-        html_content = render_template(
-            "rfq_pdf_template.html",
-            quotation_number=quotation_number,
-            client_name=client_name,
-            client_email=client_email,
-            client_phone=client_phone,
-            project_name=project_name,
-            project_description=project_description,
-            project_category=project_category,
-            date_today=date_today
-        )
+        # ---------------- PDF HTML Template Embedded ----------------
+        logo_base64 = ""
+        try:
+            with open("static/logo.jpg", "rb") as f:
+                logo_base64 = base64.b64encode(f.read()).decode()
+        except:
+            pass
+
+        html_content = f"""
+        <html>
+        <head>
+        <style>
+            body {{ font-family: 'Times New Roman', serif; font-size: 14px; line-height: 1.5; margin: 40px; }}
+            table {{ width:100%; border-collapse: collapse; margin-top: 10px; }}
+            th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
+            th {{ background: #f4f4f4; }}
+            .header-table td {{ border:none; vertical-align: top; }}
+        </style>
+        </head>
+        <body>
+        <table class="header-table">
+            <tr>
+                <td>{f'<img src="data:image/jpeg;base64,{logo_base64}" style="width:150px;height:auto;">' if logo_base64 else ''}</td>
+                <td style="text-align:right;">
+                    <h2>Strategic Value Solutions</h2>
+                    <p>QUOTE<br>QUOTATION #: {quotation_number}<br>Date: {date_today}</p>
+                </td>
+            </tr>
+        </table>
+        <h4>To:</h4>
+        <p><b>{client_name}</b><br>{client_email}<br>{client_phone}</p>
+        <p><b>Project:</b> {project_name}<br>{project_description}<br>Category: {project_category}</p>
+        <p>Thank you for your business!</p>
+        </body>
+        </html>
+        """
+
+        # Generate PDF
         pdf_data = pdfkit.from_string(html_content, False)
 
         # ---------------- Upload PDF to Odoo Chatter ----------------
@@ -179,25 +199,6 @@ def submit_rfq():
             }]
         )
 
-        # ---------------- SmartArch Integration ----------------
-        smartarch_payload = {
-            "userEmail": client_email,
-            "userName": client_name,
-            "orgName": project_name,
-            "orgType": project_category,
-            "orgEmployeesCount": "1-50",
-            "orgDescription": project_description,
-            "orgContactInfo": f"Phone: {client_phone}, Email: {client_email}",
-        }
-        try:
-            smartarch_response = requests.post(
-                "http://localhost:8001/api/organization/create-user-organization",
-                json=smartarch_payload, timeout=10
-            )
-            print(f"SmartArch Response: {smartarch_response.text}")
-        except Exception as e:
-            print(f"SmartArch API call failed: {e}")
-
         # ---------------- Return PDF ----------------
         return send_file(
             io.BytesIO(pdf_data),
@@ -210,12 +211,10 @@ def submit_rfq():
         print(f"submit_rfq error: {e}")
         return jsonify({"error": str(e)}), 500
 
-
 # ------------------- Root -------------------
 @app.route("/")
 def home():
     return "✅ Flask RFQ Server is running."
-
 
 # ------------------- Run -------------------
 if __name__ == "__main__":
