@@ -15,13 +15,13 @@ class OdooClient:
             if not all([ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD]):
                 raise Exception("❌ Missing Odoo credentials in environment variables!")
 
-            # XML-RPC common endpoint for authentication
+            # Common endpoint
             common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
             self.uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
             if not self.uid:
                 raise Exception("❌ Odoo authentication failed!")
 
-            # XML-RPC object endpoint for CRUD operations
+            # Object endpoint
             self.models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
             self.DB = ODOO_DB
             self.PASSWORD = ODOO_PASSWORD
@@ -31,7 +31,7 @@ class OdooClient:
             print(f"❌ Failed to connect to Odoo: {e}")
             raise e
 
-    # ------------------- UTILITIES -------------------
+    # ---------------- CRM HELPERS ----------------
     def _get_stage_id(self, stage_name="New"):
         try:
             stage_ids = self.models.execute_kw(
@@ -45,7 +45,6 @@ class OdooClient:
             print(f"⚠️ Couldn't find stage '{stage_name}': {e}")
             return False
 
-    # ------------------- CRM METHODS -------------------
     def create_lead(self, lead_data, stage_name="New"):
         try:
             lead_data['type'] = 'opportunity'
@@ -56,7 +55,7 @@ class OdooClient:
                     lead_data['stage_id'] = stage_id
 
             if 'team_id' not in lead_data:
-                lead_data['team_id'] = 1  # default sales team
+                lead_data['team_id'] = 1  # Default sales team
 
             lead_id = self.models.execute_kw(
                 self.DB, self.uid, self.PASSWORD,
