@@ -133,6 +133,9 @@ def submit_rfq():
         quotation_number = f"QT-{str(uuid.uuid4())[:8].upper()}"
         date_today = datetime.date.today().strftime("%m/%d/%Y")
 
+        with open("static/logo.jpg", "rb") as img_file:
+            logo_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+
         # ---------------- Prepare HTML PDF ----------------
         # PDF HTML template
         pdf_html = f"""
