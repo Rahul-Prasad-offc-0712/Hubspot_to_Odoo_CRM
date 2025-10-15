@@ -129,18 +129,13 @@ def submit_rfq():
         project_name = request.form.get("project_name")
         project_description = request.form.get("project_description")
         project_category = request.form.get("project_category")
+
         quotation_number = f"QT-{str(uuid.uuid4())[:8].upper()}"
         date_today = datetime.date.today().strftime("%m/%d/%Y")
 
-        # ---------------- PDF HTML Template Embedded ----------------
-        logo_base64 = ""
-        try:
-            with open("static/logo.jpg", "rb") as f:
-                logo_base64 = base64.b64encode(f.read()).decode()
-        except:
-            pass
-
-        html_content = f"""
+        # ---------------- Prepare HTML PDF ----------------
+        # PDF HTML template
+        pdf_html = f"""
         <html>
         <head>
         <style>
@@ -154,25 +149,38 @@ def submit_rfq():
         <body>
         <table class="header-table">
             <tr>
-                <td>{f'<img src="data:image/jpeg;base64,{logo_base64}" style="width:150px;height:auto;">' if logo_base64 else ''}</td>
+                <td><img src="data:image/jpeg;base64,{logo_base64}" style="width:150px;height:auto;"></td>
                 <td style="text-align:right;">
                     <h2>Strategic Value Solutions</h2>
-                    <p>QUOTE<br>QUOTATION #: {quotation_number}<br>Date: {date_today}</p>
+                    <p>QUOTE<br>QUOTATION #: {quotation_number}<br>Date: {date_today}<br>Expiration: {expiration_date}</p>
                 </td>
             </tr>
         </table>
+    
         <h4>To:</h4>
-        <p><b>{client_name}</b><br>{client_email}<br>{client_phone}</p>
-        <p><b>Project:</b> {project_name}<br>{project_description}<br>Category: {project_category}</p>
+        <p><b>{client_name}</b><br>{client_address}<br>{client_email}<br>{client_phone}</p>
+    
+        <table>
+            <tr><th>Qty</th><th>Description</th><th>Unit Price</th><th>Line Total</th></tr>
+            {rows}
+        </table>
+    
+        <table style="margin-top:20px;">
+            <tr><td style="text-align:right;"><b>Subtotal:</b></td><td style="text-align:right;">${subtotal:.2f}</td></tr>
+            <tr><td style="text-align:right;"><b>Sales Tax:</b></td><td style="text-align:right;">$0.00</td></tr>
+            <tr><td style="text-align:right;"><b>Total:</b></td><td style="text-align:right;"><b>${total:.2f}</b></td></tr>
+        </table>
+    
+        <p style="margin-top:20px;">Quotation prepared by: <b>Uttam Soni</b></p>
+        <p>This is a quotation on the goods named, subject to the conditions noted below: All sales final, payment due upon receipt.</p>
+        <p>To accept this quotation, sign here and return: ________________________________________________</p>
         <p>Thank you for your business!</p>
         </body>
         </html>
         """
+        pdf_data = pdfkit.from_string(pdf_html, False)
 
-        # Generate PDF
-        pdf_data = pdfkit.from_string(html_content, False)
-
-        # ---------------- Upload PDF to Odoo Chatter ----------------
+        # ---------------- Upload PDF to Odoo ----------------
         pdf_base64 = base64.b64encode(pdf_data).decode("utf-8")
         attachment_vals = {
             "name": f"RFQ_{quotation_number}.pdf",
@@ -186,10 +194,12 @@ def submit_rfq():
             odoo.db, odoo.uid, odoo.password,
             "ir.attachment", "create", [attachment_vals]
         )
+
+        # ---------------- Post message in Chatter ----------------
         odoo.models.execute_kw(
             odoo.db, odoo.uid, odoo.password,
             "crm.lead", "message_post",
-            [[lead_id], f"<p>📎 RFQ PDF generated for <b>{project_name}</b></p>"],
+            [[lead_id], f"📎 RFQ PDF generated for {project_name}"],
             {
                 "message_type": "comment",
                 "subtype_id": 1,
@@ -197,8 +207,7 @@ def submit_rfq():
             }
         )
 
-
-        # ---------------- Return PDF ----------------
+        # ---------------- Return PDF to user ----------------
         return send_file(
             io.BytesIO(pdf_data),
             as_attachment=True,
@@ -209,6 +218,7 @@ def submit_rfq():
     except Exception as e:
         print(f"submit_rfq error: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 # ------------------- Root -------------------
 @app.route("/")
