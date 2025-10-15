@@ -1,93 +1,114 @@
 import xmlrpc.client
-import os
+import base64
+import traceback
 
-# ---------------- Environment Variables ----------------
-ODOO_URL = os.environ.get("ODOO_URL")
-ODOO_DB = os.environ.get("ODOO_DB")
-ODOO_USERNAME = os.environ.get("ODOO_USERNAME")
-ODOO_PASSWORD = os.environ.get("ODOO_PASSWORD")
+# -----------------------------
+# Odoo Config
+# -----------------------------
+from config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 
 
 class OdooClient:
     def __init__(self):
-        """Authenticate and setup XML-RPC connection"""
+        """Authenticate with Odoo XML-RPC"""
         try:
-            if not all([ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD]):
-                raise Exception("❌ Missing Odoo credentials in environment variables!")
+            print("🔗 Connecting to Odoo...")
 
-            # Common endpoint
+            # Common endpoint for login
             common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
             self.uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
             if not self.uid:
-                raise Exception("❌ Odoo authentication failed!")
+                raise Exception("❌ Authentication failed. Check credentials or Odoo URL.")
 
-            # Object endpoint
+            # Object endpoint for model operations
             self.models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
-            self.DB = ODOO_DB
-            self.PASSWORD = ODOO_PASSWORD
+            self.db = ODOO_DB
+            self.password = ODOO_PASSWORD
 
-            print(f"✅ Connected to Odoo DB '{ODOO_DB}' as '{ODOO_USERNAME}', UID={self.uid}")
+            print(f"✅ Connected to Odoo as {ODOO_USERNAME} (uid={self.uid})")
+
         except Exception as e:
-            print(f"❌ Failed to connect to Odoo: {e}")
-            raise e
+            print(f"🚨 Odoo connection failed: {e}")
+            traceback.print_exc()
 
-    # ---------------- CRM HELPERS ----------------
-    def _get_stage_id(self, stage_name="New"):
+    # ---------------------------------------------------------
+    # Upload PDF to Chatter (for RFQ Form)
+    # ---------------------------------------------------------
+    def upload_pdf_to_chatter(self, lead_id, pdf_bytes, filename="RFQ_Form.pdf"):
+        """
+        Uploads PDF as an attachment to the chatter of a given Lead (crm.lead)
+        and posts a message linking it.
+        """
         try:
-            stage_ids = self.models.execute_kw(
-                self.DB, self.uid, self.PASSWORD,
-                'crm.stage', 'search',
-                [[['name', '=', stage_name]]],
-                {'limit': 1}
+            print(f"📎 Uploading PDF '{filename}' to Odoo chatter for lead ID {lead_id}...")
+
+            # Step 1: Encode PDF
+            encoded_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+
+            # Step 2: Create attachment record
+            attachment_id = self.models.execute_kw(
+                self.db, self.uid, self.password,
+                'ir.attachment', 'create',
+                [{
+                    'name': filename,
+                    'type': 'binary',
+                    'datas': encoded_pdf,
+                    'res_model': 'crm.lead',
+                    'res_id': lead_id,
+                    'mimetype': 'application/pdf',
+                }]
             )
-            return stage_ids[0] if stage_ids else False
+
+            print(f"✅ Attachment created in Odoo (ID: {attachment_id})")
+
+            # Step 3: Post message in chatter with attachment
+            self.models.execute_kw(
+                self.db, self.uid, self.password,
+                'crm.lead', 'message_post',
+                [[lead_id], {  # ✅ Important: record IDs in list
+                    'body': f"<p>RFQ Form PDF generated successfully.</p>",
+                    'message_type': 'comment',
+                    'subtype_id': 1,  # internal discussion subtype
+                    'attachment_ids': [(4, attachment_id)],
+                }]
+            )
+
+            print("💬 Message with PDF successfully posted to chatter.")
+
+            return True
+
         except Exception as e:
-            print(f"⚠️ Couldn't find stage '{stage_name}': {e}")
+            print(f"⚠️ Failed to upload PDF to Odoo chatter: {e}")
+            traceback.print_exc()
             return False
 
-    def create_lead(self, lead_data, stage_name="New"):
+    # ---------------------------------------------------------
+    # Generic utility: Create lead or update (if needed)
+    # ---------------------------------------------------------
+    def create_lead(self, values):
+        """Example method to create a CRM lead"""
         try:
-            lead_data['type'] = 'opportunity'
-
-            if 'stage_id' not in lead_data:
-                stage_id = self._get_stage_id(stage_name)
-                if stage_id:
-                    lead_data['stage_id'] = stage_id
-
-            if 'team_id' not in lead_data:
-                lead_data['team_id'] = 1  # Default sales team
-
             lead_id = self.models.execute_kw(
-                self.DB, self.uid, self.PASSWORD,
-                'crm.lead', 'create',
-                [lead_data]
+                self.db, self.uid, self.password,
+                'crm.lead', 'create', [values]
             )
-            print(f"✅ Created Opportunity ID: {lead_id}")
+            print(f"✅ Lead created with ID: {lead_id}")
             return lead_id
         except Exception as e:
-            print(f"❌ Error creating lead in Odoo: {e}")
+            print(f"⚠️ Error creating lead: {e}")
+            traceback.print_exc()
             return None
 
-    def search_lead_by_email(self, email):
+    def update_lead(self, lead_id, values):
+        """Example method to update a CRM lead"""
         try:
-            lead_ids = self.models.execute_kw(
-                self.DB, self.uid, self.PASSWORD,
-                'crm.lead', 'search',
-                [[['email_from', '=', email]]]
+            self.models.execute_kw(
+                self.db, self.uid, self.password,
+                'crm.lead', 'write', [[lead_id], values]
             )
-            return lead_ids
+            print(f"✏️ Lead {lead_id} updated successfully.")
+            return True
         except Exception as e:
-            print(f"❌ Error searching lead by email: {e}")
-            return []
-
-    def get_crm_lead_fields(self):
-        try:
-            fields_dict = self.models.execute_kw(
-                self.DB, self.uid, self.PASSWORD,
-                'crm.lead', 'fields_get',
-                [], {'attributes': ['string', 'type']}
-            )
-            return list(fields_dict.keys())
-        except Exception as e:
-            print(f"❌ Error fetching CRM lead fields: {e}")
-            return []
+            print(f"⚠️ Error updating lead {lead_id}: {e}")
+            traceback.print_exc()
+            return False
