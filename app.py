@@ -186,18 +186,17 @@ def submit_rfq():
             odoo.db, odoo.uid, odoo.password,
             "ir.attachment", "create", [attachment_vals]
         )
-
-        # Post message in chatter
         odoo.models.execute_kw(
             odoo.db, odoo.uid, odoo.password,
             "crm.lead", "message_post",
-            [[lead_id], {
-                "body": f"<p>📎 RFQ PDF generated for <b>{project_name}</b></p>",
+            [[lead_id], f"<p>📎 RFQ PDF generated for <b>{project_name}</b></p>"],
+            {
                 "message_type": "comment",
                 "subtype_id": 1,
                 "attachment_ids": [(4, attachment_id)],
-            }]
+            }
         )
+
 
         # ---------------- Return PDF ----------------
         return send_file(
