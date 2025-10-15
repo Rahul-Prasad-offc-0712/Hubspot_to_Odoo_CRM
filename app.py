@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, send_file, jsonify, url_for
-import pdfkit, io, base64, requests, json, datetime, os, uuid
+from flask import Flask, render_template, request, send_file, jsonify
+import pdfkit, io, base64, datetime, uuid
 from odoo_client import OdooClient
 
 # ---------------- Flask App ----------------
@@ -7,24 +7,9 @@ app = Flask(__name__)
 odoo = OdooClient()
 
 # ---------------- PDFKit Config ----------------
-# Dynamically detect environment (Windows local vs Linux Render)
-if os.getenv("RENDER"):
-    # Render runs on Linux
-    PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
-else:
-    # Local development (Windows)
-    PDFKIT_CONFIG = pdfkit.configuration(
-        wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
-    )
-
-
-# ---------------- Odoo Config ----------------
-ODOO_URL = "https://intranet-stratvals-stg-100620205-24352374.dev.odoo.com"
-ODOO_DB = "intranet-stratvals-stg-100620205-24352374"
-ODOO_EMAIL = "rahul.prasad@stratvals.com"
-ODOO_API_KEY = "97d6f5b3faf7ef8a4f7b2e58f33d26d57a2aa60e"
-RES_MODEL = "crm.lead"
-ODOO_RPC_URL = f"{ODOO_URL}/jsonrpc"
+PDFKIT_CONFIG = pdfkit.configuration(
+    wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"  # Update path if needed
+)
 
 # ---------------- HubSpot → Odoo Lead ----------------
 def parse_values(values_list):
@@ -45,19 +30,16 @@ def create_odoo_lead(values, lead_type="IQL"):
         "city": city,
         "description": f"Lead from HubSpot ({lead_type})",
     }
-    exists = odoo.search_lead_by_email(email)
-    if exists:
+    if odoo.search_lead_by_email(email):
         print(f"⚠️ Duplicate lead skipped: {name} ({email})")
         return
     lead_id = odoo.create_lead(lead_data)
     print(f"✅ Lead created: {name} ({email}), Type={lead_type}, ID={lead_id}")
     return lead_id
 
-# ---------------- ROUTES ----------------
-
+# ---------------- Routes ----------------
 @app.route("/hubspot_webhook", methods=["POST"])
 def hubspot_webhook():
-    """Webhook from HubSpot to create a lead"""
     data = request.json
     values_list = []
     for event in data.get("events", []):
@@ -74,7 +56,6 @@ def hubspot_webhook():
 
 @app.route("/project/details", methods=["GET"])
 def project_details():
-    """Fetch Project Details from Odoo"""
     project_name = request.args.get("project_name")
     project_description = request.args.get("project_description")
     project_category = request.args.get("project_category")
@@ -85,46 +66,30 @@ def project_details():
         ['x_studio_project_description_1', '=', project_description],
         ['x_studio_project_category_1', '=', project_category]
     ]
-    try:
-        ids = odoo.models.execute_kw(
-            odoo.DB, odoo.uid, odoo.PASSWORD,
-            'crm.lead', 'search', [domain]
-        )
-        if not ids:
-            return jsonify({"status": "not found"})
-        data = odoo.models.execute_kw(
-            odoo.DB, odoo.uid, odoo.PASSWORD,
-            'crm.lead', 'read', [ids[:1]],
-            {'fields': ['name', 'x_studio_project_name_1', 'x_studio_project_description_1', 'x_studio_project_category_1']}
-        )
-        return jsonify({"status": "success", "data": data})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    ids = odoo.models.execute_kw(odoo.DB, odoo.uid, odoo.PASSWORD, 'crm.lead', 'search', [domain])
+    if not ids:
+        return jsonify({"status": "not found"})
+    data = odoo.models.execute_kw(
+        odoo.DB, odoo.uid, odoo.PASSWORD, 'crm.lead', 'read', [ids[:1]],
+        {'fields': ['name', 'x_studio_project_name_1', 'x_studio_project_description_1', 'x_studio_project_category_1']}
+    )
+    return jsonify({"status": "success", "data": data})
 
 @app.route("/lead/won", methods=["GET"])
 def lead_won():
-    """Check if a lead is marked Won"""
     lead_name = request.args.get("lead_name", "").strip()
     domain = [['stage_id.name', 'ilike', 'won']]
     if lead_name:
         domain.append(['name', 'ilike', lead_name])
-    try:
-        ids = odoo.models.execute_kw(
-            odoo.DB, odoo.uid, odoo.PASSWORD,
-            'crm.lead', 'search', [domain]
-        )
-        if ids:
-            return jsonify({"status": "success", "message": f"Lead {lead_name or ''} is won successfully"})
-        else:
-            return jsonify({"status": "not found", "message": "No won lead found"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    ids = odoo.models.execute_kw(odoo.DB, odoo.uid, odoo.PASSWORD, 'crm.lead', 'search', [domain])
+    if ids:
+        return jsonify({"status": "success", "message": f"Lead {lead_name or ''} is won successfully"})
+    else:
+        return jsonify({"status": "not found", "message": "No won lead found"})
 
-# ---------------- ROUTES ----------------
-
+# ---------------- RFQ Form ----------------
 @app.route("/rfq/<int:lead_id>", methods=["GET"])
 def rfq_form(lead_id):
-    """Render RFQ Form"""
     project_name = request.args.get("project_name", "")
     description = request.args.get("project_description", "")
     category = request.args.get("project_category", "")
@@ -134,23 +99,20 @@ def rfq_form(lead_id):
                            description=description,
                            category=category)
 
-
+# ---------------- Submit RFQ ----------------
 @app.route("/submit-rfq", methods=["POST"])
 def submit_rfq():
-    """Generate PDF from RFQ form"""
     lead_id = int(request.form.get("lead_id", 0))
     if not lead_id:
         return "Invalid lead_id", 400
 
-    # Fetch lead data
+    # Fetch lead
     lead = odoo.models.execute_kw(
-        odoo.DB, odoo.uid, odoo.PASSWORD,
-        'crm.lead', 'read', [[lead_id]],
-        {'fields': ['name', 'partner_name', 'email_from', 'phone', 
+        odoo.DB, odoo.uid, odoo.PASSWORD, 'crm.lead', 'read', [[lead_id]],
+        {'fields': ['name', 'partner_name', 'email_from', 'phone',
                     'x_studio_project_name_1', 'x_studio_project_description_1', 'x_studio_project_category_1']}
     )[0]
 
-    # Client & expiration
     client_name = request.form.get("client_name") or lead.get('partner_name', 'Client')
     client_address = request.form.get("client_address") or ""
     client_email = request.form.get("client_email") or lead.get('email_from', 'client@example.com')
@@ -185,60 +147,55 @@ def submit_rfq():
     with open("static/logo.jpg", "rb") as img_file:
         logo_base64 = base64.b64encode(img_file.read()).decode('utf-8')
 
-    # PDF HTML template
-    pdf_html = f"""
-    <html>
-    <head>
-    <style>
+    pdf_html = f"""<html><head><style>
         body {{ font-family: 'Times New Roman', serif; font-size: 14px; line-height: 1.5; margin: 40px; }}
         table {{ width:100%; border-collapse: collapse; margin-top: 10px; }}
         th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
         th {{ background: #f4f4f4; }}
         .header-table td {{ border:none; vertical-align: top; }}
-    </style>
-    </head>
-    <body>
-    <table class="header-table">
-        <tr>
-            <td><img src="data:image/jpeg;base64,{logo_base64}" style="width:150px;height:auto;"></td>
-            <td style="text-align:right;">
-                <h2>Strategic Value Solutions</h2>
-                <p>QUOTE<br>QUOTATION #: {quotation_number}<br>Date: {date_today}<br>Expiration: {expiration_date}</p>
-            </td>
-        </tr>
-    </table>
+        </style></head>
+        <body>
+        <table class="header-table">
+            <tr>
+                <td><img src="data:image/jpeg;base64,{logo_base64}" style="width:150px;height:auto;"></td>
+                <td style="text-align:right;">
+                    <h2>Strategic Value Solutions</h2>
+                    <p>QUOTE<br>QUOTATION #: {quotation_number}<br>Date: {date_today}<br>Expiration: {expiration_date}</p>
+                </td>
+            </tr>
+        </table>
+        <h4>To:</h4>
+        <p><b>{client_name}</b><br>{client_address}<br>{client_email}<br>{client_phone}</p>
+        <table>
+            <tr><th>Qty</th><th>Description</th><th>Unit Price</th><th>Line Total</th></tr>
+            {rows}
+        </table>
+        <table style="margin-top:20px;">
+            <tr><td style="text-align:right;"><b>Subtotal:</b></td><td style="text-align:right;">${subtotal:.2f}</td></tr>
+            <tr><td style="text-align:right;"><b>Sales Tax:</b></td><td style="text-align:right;">$0.00</td></tr>
+            <tr><td style="text-align:right;"><b>Total:</b></td><td style="text-align:right;"><b>${total:.2f}</b></td></tr>
+        </table>
+        </body></html>"""
 
-    <h4>To:</h4>
-    <p><b>{client_name}</b><br>{client_address}<br>{client_email}<br>{client_phone}</p>
+    pdf_bytes = pdfkit.from_string(pdf_html, False, configuration=PDFKIT_CONFIG)
 
-    <table>
-        <tr><th>Qty</th><th>Description</th><th>Unit Price</th><th>Line Total</th></tr>
-        {rows}
-    </table>
+    # Upload PDF to Odoo as attachment
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    attachment_vals = {
+        "name": f"RFQ_{quotation_number}.pdf",
+        "datas": pdf_base64,
+        "res_model": "crm.lead",
+        "res_id": lead_id,
+        "type": "binary",
+        "mimetype": "application/pdf",
+    }
+    attachment_id = odoo.models.execute_kw(
+        odoo.DB, odoo.uid, odoo.PASSWORD,
+        "ir.attachment", "create", [attachment_vals]
+    )
+    print(f"✅ Uploaded PDF as attachment ID: {attachment_id} in Odoo for lead {lead_id}")
 
-    <table style="margin-top:20px;">
-        <tr><td style="text-align:right;"><b>Subtotal:</b></td><td style="text-align:right;">${subtotal:.2f}</td></tr>
-        <tr><td style="text-align:right;"><b>Sales Tax:</b></td><td style="text-align:right;">$0.00</td></tr>
-        <tr><td style="text-align:right;"><b>Total:</b></td><td style="text-align:right;"><b>${total:.2f}</b></td></tr>
-    </table>
-
-    <p style="margin-top:20px;">Quotation prepared by: <b>Uttam Soni</b></p>
-    <p>This is a quotation on the goods named, subject to the conditions noted below: All sales final, payment due upon receipt.</p>
-    <p>To accept this quotation, sign here and return: ________________________________________________</p>
-    <p>Thank you for your business!</p>
-    </body>
-    </html>
-    """
-
-    # Generate PDF
-    try:
-        pdf_bytes = pdfkit.from_string(pdf_html, False, configuration=PDFKIT_CONFIG)
-    except Exception as e:
-        return f"PDF generation failed: {e}", 500
-
-    pdf_filename = f"Quotation_{lead_id}.pdf"
-    return send_file(io.BytesIO(pdf_bytes), download_name=pdf_filename, as_attachment=True)
-
+    return send_file(io.BytesIO(pdf_bytes), download_name=f"RFQ_{quotation_number}.pdf", as_attachment=True)
 
 # ---------------- MAIN ----------------
 if __name__ == "__main__":
