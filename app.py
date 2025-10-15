@@ -118,26 +118,54 @@ def rfq_form(lead_id):
         category=category
     )
 
-# ------------------- Submit RFQ & Generate PDF -------------------
 @app.route("/submit-rfq", methods=["POST"])
 def submit_rfq():
     try:
+        # ------------------ Fetch lead ------------------
         lead_id = int(request.form.get("lead_id"))
-        client_name = request.form.get("client_name")
-        client_email = request.form.get("client_email")
-        client_phone = request.form.get("client_phone")
-        project_name = request.form.get("project_name")
-        project_description = request.form.get("project_description")
-        project_category = request.form.get("project_category")
+        lead = odoo.models.execute_kw(
+            odoo.db, odoo.uid, odoo.password,
+            'crm.lead', 'read', [[lead_id]],
+            {'fields': ['name', 'partner_name', 'email_from', 'phone',
+                        'x_studio_project_name_1', 'x_studio_project_description_1', 'x_studio_project_category_1']}
+        )[0]
 
+        # ------------------ Client info ------------------
+        client_name = request.form.get("client_name") or lead.get('partner_name', 'Client')
+        client_address = request.form.get("client_address") or ""
+        client_email = request.form.get("client_email") or lead.get('email_from', 'client@example.com')
+        client_phone = request.form.get("client_phone") or lead.get('phone', '')
+        expiration_date = request.form.get("expiration_date") or (datetime.date.today() + datetime.timedelta(days=15)).strftime("%m/%d/%Y")
+
+        # ------------------ Project fields ------------------
+        field_names = request.form.getlist("field_name[]")
+        field_values = request.form.getlist("field_value[]")
+        quantities = request.form.getlist("quantity[]")
+        unit_prices = request.form.getlist("unit_price[]")
+
+        subtotal = 0
+        rows = ""
+        for name, value, qty, price in zip(field_names, field_values, quantities, unit_prices):
+            try:
+                qty_val = int(qty)
+                price_val = float(price)
+            except:
+                qty_val = 1
+                price_val = 0
+            line_total = qty_val * price_val
+            subtotal += line_total
+            desc = f"{name}: {value}"
+            rows += f"<tr><td>{qty_val}</td><td>{desc}</td><td>${price_val:.2f}</td><td>${line_total:.2f}</td></tr>"
+
+        total = subtotal
         quotation_number = f"QT-{str(uuid.uuid4())[:8].upper()}"
         date_today = datetime.date.today().strftime("%m/%d/%Y")
 
+        # ------------------ Logo base64 ------------------
         with open("static/logo.jpg", "rb") as img_file:
             logo_base64 = base64.b64encode(img_file.read()).decode('utf-8')
 
-        # ---------------- Prepare HTML PDF ----------------
-        # PDF HTML template
+        # ------------------ PDF HTML ------------------
         pdf_html = f"""
         <html>
         <head>
@@ -159,21 +187,21 @@ def submit_rfq():
                 </td>
             </tr>
         </table>
-    
+
         <h4>To:</h4>
         <p><b>{client_name}</b><br>{client_address}<br>{client_email}<br>{client_phone}</p>
-    
+
         <table>
             <tr><th>Qty</th><th>Description</th><th>Unit Price</th><th>Line Total</th></tr>
             {rows}
         </table>
-    
+
         <table style="margin-top:20px;">
             <tr><td style="text-align:right;"><b>Subtotal:</b></td><td style="text-align:right;">${subtotal:.2f}</td></tr>
             <tr><td style="text-align:right;"><b>Sales Tax:</b></td><td style="text-align:right;">$0.00</td></tr>
             <tr><td style="text-align:right;"><b>Total:</b></td><td style="text-align:right;"><b>${total:.2f}</b></td></tr>
         </table>
-    
+
         <p style="margin-top:20px;">Quotation prepared by: <b>Uttam Soni</b></p>
         <p>This is a quotation on the goods named, subject to the conditions noted below: All sales final, payment due upon receipt.</p>
         <p>To accept this quotation, sign here and return: ________________________________________________</p>
@@ -181,10 +209,12 @@ def submit_rfq():
         </body>
         </html>
         """
-        pdf_data = pdfkit.from_string(pdf_html, False)
 
-        # ---------------- Upload PDF to Odoo ----------------
-        pdf_base64 = base64.b64encode(pdf_data).decode("utf-8")
+        # ------------------ Generate PDF ------------------
+        pdf_bytes = pdfkit.from_string(pdf_html, False)
+
+        # ------------------ Upload to Odoo ------------------
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
         attachment_vals = {
             "name": f"RFQ_{quotation_number}.pdf",
             "datas": pdf_base64,
@@ -198,29 +228,30 @@ def submit_rfq():
             "ir.attachment", "create", [attachment_vals]
         )
 
-        # ---------------- Post message in Chatter ----------------
+        # ------------------ Post message to chatter ------------------
         odoo.models.execute_kw(
             odoo.db, odoo.uid, odoo.password,
             "crm.lead", "message_post",
-            [[lead_id], f"📎 RFQ PDF generated for {project_name}"],
-            {
+            [[lead_id], {
+                "body": f"<p>📎 RFQ PDF generated for <b>{client_name}</b></p>",
                 "message_type": "comment",
                 "subtype_id": 1,
                 "attachment_ids": [(4, attachment_id)],
-            }
+            }]
         )
 
-        # ---------------- Return PDF to user ----------------
+        # ------------------ Return PDF ------------------
         return send_file(
-            io.BytesIO(pdf_data),
+            io.BytesIO(pdf_bytes),
             as_attachment=True,
             download_name=f"RFQ_{quotation_number}.pdf",
-            mimetype="application/pdf",
+            mimetype="application/pdf"
         )
 
     except Exception as e:
         print(f"submit_rfq error: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 
 # ------------------- Root -------------------
