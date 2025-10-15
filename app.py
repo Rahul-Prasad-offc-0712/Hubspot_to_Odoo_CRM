@@ -8,9 +8,16 @@ app = Flask(__name__)
 odoo = OdooClient()
 
 # ---------------- PDFKit Config ----------------
-PDFKIT_CONFIG = pdfkit.configuration(
-    wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"  # Update path if needed
-)
+# Dynamically detect environment (Windows local vs Linux Render)
+if os.getenv("RENDER"):
+    # Render runs on Linux
+    PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
+else:
+    # Local development (Windows)
+    PDFKIT_CONFIG = pdfkit.configuration(
+        wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+    )
+
 
 # ---------------- Odoo Config ----------------
 ODOO_URL = "https://intranet-stratvals-stg-100620205-24352374.dev.odoo.com"
