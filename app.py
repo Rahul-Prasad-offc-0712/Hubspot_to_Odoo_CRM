@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, send_file, jsonify
-import pdfkit, io, base64, datetime, uuid
+from flask import Flask, render_template, request, send_file, jsonify, url_for
+import pdfkit, io, base64, requests, json, datetime, os, uuid
 from odoo_client import OdooClient
 
 # ---------------- Flask App ----------------
@@ -7,9 +7,15 @@ app = Flask(__name__)
 odoo = OdooClient()
 
 # ---------------- PDFKit Config ----------------
-PDFKIT_CONFIG = pdfkit.configuration(
-    wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"  # Update path if needed
-)
+# Dynamically detect environment (Windows local vs Linux Render)
+if os.getenv("RENDER"):
+    # Render runs on Linux
+    PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf="/usr/bin/wkhtmltopdf")
+else:
+    # Local development (Windows)
+    PDFKIT_CONFIG = pdfkit.configuration(
+        wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+    )
 
 # ---------------- HubSpot → Odoo Lead ----------------
 def parse_values(values_list):
