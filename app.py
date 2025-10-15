@@ -1,7 +1,6 @@
 from flask import Flask, render_template, request, send_file, jsonify, url_for
-import pdfkit, io, base64, requests, json, datetime
+import pdfkit, io, base64, requests, json, datetime, os, uuid
 from odoo_client import OdooClient
-import uuid
 
 # ---------------- Flask App ----------------
 app = Flask(__name__)
