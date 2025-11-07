@@ -25,23 +25,33 @@ def parse_values(values_list):
     return result
 
 def create_odoo_lead(values, lead_type="IQL"):
-    name = f"{values.get('firstname', '')} {values.get('lastname', '')}".strip() or "Unknown"
-    email = values.get("email", "No Email")
-    phone = values.get("phone", "")
-    city = values.get("city", "")
+    # Normalize HubSpot field names
+    firstname = values.get("first name") or values.get("firstname", "")
+    lastname = values.get("last name") or values.get("lastname", "")
+    email = values.get("email") or ""
+    phone = values.get("phone") or ""
+    company = values.get("company") or ""
+    message = values.get("message") or ""
+
+    name = f"{firstname} {lastname}".strip() or "Unknown"
+
+    # Sanitize None values (important for XML-RPC)
     lead_data = {
-        "name": name,
-        "email_from": email,
-        "phone": phone,
-        "city": city,
-        "description": f"Lead from HubSpot ({lead_type})",
+        "name": name or "Unknown",
+        "email_from": email or "No Email",
+        "phone": phone or "",
+        "partner_name": company or "",
+        "description": message or f"Lead from HubSpot ({lead_type})",
     }
+
     if odoo.search_lead_by_email(email):
         print(f"⚠️ Duplicate lead skipped: {name} ({email})")
         return
+
     lead_id = odoo.create_lead(lead_data)
     print(f"✅ Lead created: {name} ({email}), Type={lead_type}, ID={lead_id}")
     return lead_id
+
 
 # ---------------- Routes ----------------
 @app.route("/hubspot_webhook", methods=["POST"])
