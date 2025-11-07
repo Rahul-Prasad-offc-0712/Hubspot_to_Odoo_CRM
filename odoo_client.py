@@ -1,20 +1,31 @@
 import xmlrpc.client
 from config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 
+
 class OdooClient:
     def __init__(self):
         """Authenticate and setup XML-RPC connection with HTTPS support"""
         try:
+            # Enable allow_none=True so Odoo accepts None values
             transport = xmlrpc.client.SafeTransport()
-            # Common endpoint for authentication
-            common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common", transport=transport)
+            common = xmlrpc.client.ServerProxy(
+                f"{ODOO_URL}/xmlrpc/2/common",
+                transport=transport,
+                allow_none=True
+            )
+
             self.uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
 
             if not self.uid:
                 raise Exception("❌ Odoo authentication failed!")
 
             # Object endpoint for CRUD operations
-            self.models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object", transport=transport)
+            self.models = xmlrpc.client.ServerProxy(
+                f"{ODOO_URL}/xmlrpc/2/object",
+                transport=transport,
+                allow_none=True
+            )
+
             self.DB = ODOO_DB
             self.PASSWORD = ODOO_PASSWORD
             print(f"✅ Connected to Odoo DB '{ODOO_DB}' as '{ODOO_USERNAME}', UID={self.uid}")
@@ -41,6 +52,9 @@ class OdooClient:
     def create_lead(self, lead_data, stage_name="New"):
         """Create CRM Opportunity"""
         try:
+            # Replace None with empty string before sending
+            lead_data = {k: (v if v is not None else "") for k, v in lead_data.items()}
+
             lead_data['type'] = 'opportunity'
             if 'stage_id' not in lead_data:
                 stage_id = self._get_stage_id(stage_name)
@@ -48,6 +62,7 @@ class OdooClient:
                     lead_data['stage_id'] = stage_id
             if 'team_id' not in lead_data:
                 lead_data['team_id'] = 1  # Default Sales Team
+
             lead_id = self.models.execute_kw(
                 self.DB, self.uid, self.PASSWORD,
                 'crm.lead', 'create', [lead_data]
