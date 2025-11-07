@@ -75,6 +75,11 @@ def hubspot_webhook():
 
         return jsonify({"status": "success"}), 200
 
+    except Exception as e:
+        print(f"❌ Error processing HubSpot webhook: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 
 @app.route("/project/details", methods=["GET"])
 def project_details():
