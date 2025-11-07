@@ -46,19 +46,35 @@ def create_odoo_lead(values, lead_type="IQL"):
 # ---------------- Routes ----------------
 @app.route("/hubspot_webhook", methods=["POST"])
 def hubspot_webhook():
-    data = request.json
-    values_list = []
-    for event in data.get("events", []):
-        values_list = event.get("formSubmission", {}).get("values", [])
-        if values_list:
-            break
-    if not values_list and "properties" in data:
-        values_list = [{"name": k, "value": v.get("value")} for k, v in data["properties"].items()]
-    if not values_list:
-        return jsonify({"status": "no data found"}), 400
-    parsed = parse_values(values_list)
-    create_odoo_lead(parsed, lead_type="IQL")
-    return jsonify({"status": "success"})
+    try:
+        # Support both JSON and Form submissions
+        data = request.get_json(silent=True)
+        if not data:
+            data = request.form.to_dict()
+
+        print("Received data from HubSpot:", data)
+
+        # Try to extract the list of values
+        values_list = []
+        if isinstance(data, dict) and "events" in data:
+            for event in data.get("events", []):
+                values_list = event.get("formSubmission", {}).get("values", [])
+                if values_list:
+                    break
+        elif isinstance(data, dict) and "properties" in data:
+            values_list = [{"name": k, "value": v.get("value")} for k, v in data["properties"].items()]
+        elif isinstance(data, dict) and data:  # if simple form data
+            values_list = [{"name": k, "value": v} for k, v in data.items()]
+
+        if not values_list:
+            return jsonify({"status": "no data found", "received": data}), 400
+
+        # Parse and send to Odoo
+        parsed = parse_values(values_list)
+        create_odoo_lead(parsed, lead_type="IQL")
+
+        return jsonify({"status": "success"}), 200
+
 
 @app.route("/project/details", methods=["GET"])
 def project_details():
