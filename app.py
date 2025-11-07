@@ -25,23 +25,24 @@ def parse_values(values_list):
     return result
 
 def create_odoo_lead(values, lead_type="IQL"):
-    # Normalize HubSpot field names
-    firstname = values.get("first name") or values.get("firstname", "")
-    lastname = values.get("last name") or values.get("lastname", "")
-    email = values.get("email") or ""
-    phone = values.get("phone") or ""
-    company = values.get("company") or ""
-    message = values.get("message") or ""
+    # Handle both HubSpot key formats
+    first_name = values.get("first_name") or values.get("firstname", "")
+    last_name = values.get("last_name") or values.get("lastname", "")
+    name = f"{first_name} {last_name}".strip() or "Unknown"
 
-    name = f"{firstname} {lastname}".strip() or "Unknown"
+    email = values.get("email", "No Email")
+    phone = values.get("phone", "")
+    company = values.get("company", "")
+    message = values.get("message", "")
+    city = values.get("city", "")
 
-    # Sanitize None values (important for XML-RPC)
     lead_data = {
-        "name": name or "Unknown",
-        "email_from": email or "No Email",
-        "phone": phone or "",
-        "partner_name": company or "",
-        "description": message or f"Lead from HubSpot ({lead_type})",
+        "name": name,
+        "email_from": email,
+        "phone": phone,
+        "city": city,
+        "partner_name": company,  # show company in lead
+        "description": f"{message}\n\nLead from HubSpot ({lead_type})",
     }
 
     if odoo.search_lead_by_email(email):
